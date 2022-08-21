@@ -397,8 +397,10 @@ def K_fold_training(X,y,k=5,lada=0.015,random_state=123):
 X=np.loadtxt('/Users/zhangzhipeng/Desktop/HCR_CGEL/SEED_IV/NCNN/deap.txt')
 y=np.loadtxt('/Users/zhangzhipeng/Desktop/HCR_CGEL/SEED_IV/NCNN/deapa.txt')
 y=y.astype(int)
-X=X[800:1600]
-y=y[800:1600]
+n=y.shape[0]/32
+n=int(n)
+X=X[n:2*n]
+y=y[n:2*n]
 c=K_fold_training(X,y,k=5,lada=0.015,random_state=123)
 mean_smv=c[0]
 mean_CGEL=c[1]
