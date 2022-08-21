@@ -1,0 +1,402 @@
+#####
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+import random
+from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier
+import math
+from sklearn import tree
+
+
+######## HCRC
+def caifenx(X,j=1, s=5):
+    '''
+    input: X is preprocessed EEG dataset with four frequency bands
+    output: a list with four dataset,each dataset contains a frequency band of X
+        '''
+    pj = s - j + 1
+    channel = int(X.shape[1] / s)
+    j_index = np.arange(j)
+    j_list = []
+    jj = 0
+    while jj < 306:
+        j_list.append(j_index)
+        j_index = j_index + 5
+        jj += 5
+    band1 = np.array(j_list).reshape(1, channel * j)[0]
+    X_set=[]
+    jjj=0
+    while jjj < pj:
+        X_cut = X[:, band1]
+        X_set.append(X_cut)
+        band1 = band1 + 1
+        jjj += 1
+    return X_set
+
+
+
+def get_random_n(X,y,seed=1,n=300):
+    '''
+    to reshape the training dataset
+    input: X is preprocessed EEG dataset
+    output: the selected samples (with rejecting some samples simultaneously) of X
+        '''
+    y_count = np.where(np.bincount(y) > 1)[0]
+    X_num = np.arange(X.shape[0])
+    random.seed(seed)
+    random.shuffle(X_num)
+    X=X[X_num]
+    y=y[X_num]
+    Xi = []
+    yi=[]
+    for l in y_count:
+        index = np.where(y == l)
+        X_med =X[index][0:n]
+        yy = np.ones((n,1)) * l
+        Xi.append(X_med)
+        yi.append(yy)
+    ll = 0
+    Xmedian=np.matrix(Xi[ll])
+    ymedian=np.matrix(yi[ll])
+    while ll < len(Xi)-1:
+        Xmedian = np.concatenate([Xmedian, np.matrix(Xi[ll+1])], axis=0)
+        ymedian = np.concatenate([ymedian, np.matrix(yi[ll + 1])], axis=0)
+        ll+=1
+    return Xmedian,ymedian
+
+
+def cut_set(X,y,j=1,s=5):
+    '''
+    input: X is preprocessed EEG dataset with four frequency bands
+    output: the two list with (four frequency bands * two catagories) of X and y
+    '''
+    pj=s-j+1
+    X_all=[]
+    channel=int(X.shape[1]/s)
+    j_index = np.arange(j)
+    j_list = []
+    jj=0
+    while jj < 306:
+        j_list.append(j_index)
+        j_index=j_index+5
+        jj += 5
+    band1 = np.array(j_list).reshape(1,channel * j)[0]
+    X_set=[]
+    y_set = []
+    jjj=j-1
+    while jjj < s:
+        X_cut = X[:,band1]
+        y_count = np.where(np.bincount(y) > 1)[0]
+        Xi = []
+        yi = []
+        for l in y_count:
+            index = np.where(y == l)
+            Xi.append(X_cut[index])
+            yi.append(y[index])
+        X_set.append(Xi)
+        y_set.append(yi)
+        band1 = band1 + 1
+        jjj += 1
+    return X_set,y_set[0]
+
+def compute_dis(X,X_hebing,y,y_count,lada=0.015):
+    '''
+    input: X is a testing samples, X_hebing is the reshaped training set
+    output: the results of X through HCRC method
+    '''
+    Xi = X_hebing.T
+    y=np.matrix(y).T
+    alpha1 = np.dot(np.dot(np.matrix(np.dot(Xi.T, Xi) + lada * np.identity(Xi.shape[1])).I, Xi.T), y)
+    alpha1 = np.array(alpha1.flatten().tolist()[0])
+    j5 = 0
+    z = []
+    while j5 < len(y_count):
+        n = X[j5].shape[0]
+        alphaik = alpha1[:n]
+        alpha1 = alpha1[n:]
+        zk = np.linalg.norm(np.dot(X[j5].T, alphaik) - y)/np.linalg.norm(alphaik)
+        z.append(zk)
+        j5 += 1
+    indexx = z.index(min(z))
+    dis=min(z)
+    return indexx,dis
+
+
+def get_min_shape(X,y,j=1,s=5):
+    '''
+        find the catagory of X with the min shape
+         '''
+    y_count = np.where(np.bincount(y) > 1)[0]
+    XX,yy=cut_set(X,y)
+    shape1=[]
+    i=0
+    while i < len(y_count):
+        shape1.append(XX[0][i].shape[0])
+        i+=1
+    minshape=min(shape1)
+    return minshape
+
+
+
+
+def another_try_random(X_train, X_test, y_train, y_test,s=5,j=1,lada=0.015):
+    '''
+        get the results of testing set through HCRC method
+        (with the combinations of the ferquency band number equal to j )
+        '''
+    pj = s - j + 1
+    y_count = np.where(np.bincount(y_test) > 1)[0]
+    n = get_min_shape(X_train, y_train, j=j, s=5)
+    a, b = get_random_n(X_train, y_train,seed=0, n=n)
+    b = np.array(b.flatten().tolist()[0]).astype(int)  # 矩阵转向量
+    X_train, y_train = cut_set(a, b, j, s=5)
+    X_t = caifenx(X_test, j)
+    X_train_all = caifenx(a, j)
+    j4 = 0
+    zii = []
+    zjj = []
+    while j4 < X_t[0].shape[0]:
+        j3 = 0
+        zi = []
+        zj = []
+        while j3 < pj:
+            Xi = X_train[j3]
+            X_hebing = X_train_all[j3]
+            test_yi = X_t[j3][j4]
+            s, m = compute_dis(Xi, X_hebing, test_yi, y_count=y_count, lada=lada)
+            zi.append(s)
+            zj.append(m)
+            j3 += 1
+        # indexx = zi.index(min(zi))
+        zii.append(zi)
+        zjj.append(zj)
+        j4 += 1
+    final_z = np.array(zii)
+    final_dis = np.array(zjj)
+    return final_z
+
+def output(X_train, X_test, y_train, y_test,s=5,lada=0.015):
+    '''
+    get the results of testing set through HCRC method
+    (with all the combinations of the ferquency band  )
+    '''
+    j=1
+    a=another_try_random(X_train, X_test, y_train, y_test, s=5, j=j, lada=lada)
+    while j<s:
+        a = np.concatenate((a, another_try_random(X_train, X_test, y_train, y_test, s=5, j=j+1, lada=lada)), axis = 1)
+        j+=1
+    return a
+
+
+
+def accu_zongshu(a,y_test):
+    j = 0
+    e = []
+    while j < a.shape[0]:
+        ss = np.argmax(np.bincount(np.array(a[j])))
+        e.append(ss)
+        j += 1
+    return accuracy_score(y_test, e)
+
+def get_zongshu(a):
+    a=np.array(a)
+    j = 0
+    e = []
+    while j < a.shape[0]:
+        ss = np.argmax(np.bincount(np.array(a[j,:])))
+        e.append(ss)
+        j += 1
+    return np.matrix(e).T
+
+def get_result(y_pred):
+    j = 0
+    e = []
+    while j < y_pred.shape[0]:
+        ss = np.argmax(y_pred[j])
+        e.append(ss)
+        j += 1
+    return np.matrix(e).T
+
+##### CGEL####
+#### circular multi-grained scanning
+def cicle_window_slice(X,y,window=14,stride=2):
+    '''
+    Change X to the data of close loop
+    '''
+    X=np.concatenate((X, X[:, 0:window]), axis=1)
+    shape_1X = X.shape
+    len_iter = np.floor_divide(X_train.shape[1]+stride-1, stride)
+
+    iter_array = np.arange(0, stride * len_iter, stride)
+    ind_1X = np.arange(np.prod(shape_1X))
+    inds_to_take = [ind_1X[i:i + window] for i in iter_array]
+    sliced_sqce = np.take(X, inds_to_take, axis=1).reshape(-1, window)
+    sliced_target = np.repeat(y, len_iter)
+    return sliced_sqce, sliced_target
+
+
+
+def window_slicing_pred(X_train, X_test, y_train, y_test, window=14,stride=2):
+    '''
+    Scanning process with one window and stride
+    '''
+    X_d, y_d=cicle_window_slice(X_train,y_train,window=window,stride=stride)
+    X_s, y_s=cicle_window_slice(X_test,y_test,window=window,stride=stride)
+    len_iter = np.floor_divide(X_train.shape[1]+stride-1, stride)
+    #### RF
+    rf = RandomForestClassifier(n_estimators=30, random_state=123,oob_score=True)
+    rf.fit(X_d,y_d)
+    pred_train_rf = get_result(rf.oob_decision_function_).reshape(int(X_d.shape[0]/len_iter),len_iter)
+    pred_test_rf =get_result(rf.predict_proba(X_s)).reshape(int(X_s.shape[0]/len_iter),len_iter)
+    return pred_train_rf,pred_test_rf
+
+def vector_connect(X_train, X_test, y_train, y_test, window=14,stride=2,k=3):
+    '''
+    Scanning process
+    '''
+    X1,X2 = window_slicing_pred(X_train, X_test, y_train, y_test, window=window, stride=stride)
+    j=0
+    while j<k-1:
+        window=window-1
+        X11, X22 = window_slicing_pred(X_train, X_test, y_train, y_test, window=window, stride=stride)
+        X1=np.concatenate((X1, X11), axis=1)
+        X2 = np.concatenate((X2, X22), axis=1)
+        j+=1
+    return X1,X2
+
+
+#### ensemble learning   ###
+def cascade_ft(X_train, X_test, y_train, y_test, window=14,stride=2):
+    a, b = vector_connect(X_train, X_test, y_train, y_test, window=window, stride=stride, k=3)
+    n_tree =100 
+    prf = RandomForestClassifier(n_estimators=n_tree, random_state=1234,max_features='sqrt',
+                                     min_samples_split=0.1, oob_score=True)  
+    crf = RandomForestClassifier(n_estimators=n_tree, random_state=1234, max_features=None,
+                                 min_samples_split=0.1, oob_score=True)
+    CART_Class = tree.DecisionTreeClassifier()
+    CART_Class.fit(a, y_train)
+
+    prf.fit(a, y_train)
+    crf.fit(a, y_train)
+    eval_prf = accuracy_score(get_result(prf.oob_decision_function_), y_train)
+    eval_t = accuracy_score(y_train, CART_Class.predict(a))
+    eval_crf = accuracy_score(get_result(crf.oob_decision_function_), y_train)
+    zongshu=accu_zongshu(np.array(a),np.matrix(y_train).T)
+    ind=[eval_prf,eval_crf,eval_t,zongshu]
+    indd=ind.index(max(ind))
+    best_eval= max(eval_prf,eval_crf,eval_t,zongshu)
+    j = 0
+    while j < 100:
+        a11,b11=a,b
+        a1=get_result(prf.oob_decision_function_)
+        a2 = get_result(crf.oob_decision_function_)
+        a3 = np.matrix(CART_Class.predict(a)).T
+        a4=get_zongshu(a)
+        fa=[a1,a2,a3,a4][indd]
+        b1=get_result(prf.predict_proba(b))
+        b2 = get_result(crf.predict_proba(b))
+        b3 = np.matrix(CART_Class.predict(b)).T
+        b4=get_zongshu(b)
+        fb=[b1,b2,b3,b4][indd]
+        aa = np.concatenate((a, fa), axis=1)
+        bb=np.concatenate((b, fb), axis=1)
+        a,b=aa,bb
+        prf.fit(a, y_train)
+        crf.fit(a, y_train)
+        CART_Class.fit(a, y_train)
+        eval_prf = accuracy_score(get_result(prf.oob_decision_function_), y_train)
+        eval_crf= accuracy_score(get_result(crf.oob_decision_function_), y_train)
+        eval_t = accuracy_score(y_train, CART_Class.predict(a))
+        zongshu = accu_zongshu(np.array(a), y_train)
+        eval_mean = max(eval_prf , eval_crf,eval_t,zongshu)
+        if eval_mean>best_eval:
+            best_eval = eval_mean
+            j+=1
+        else:
+            break
+    CART_Class.fit(a11, y_train)
+    prf.fit(a11, y_train)
+    crf.fit(a11, y_train)
+    prf_test=accuracy_score(get_result(prf.predict_proba(b11)),y_test)
+    crf_test = accuracy_score(get_result(crf.predict_proba(b11)), y_test)
+    t_test=accuracy_score(CART_Class.predict(b11),y_test)
+    zongshu = accu_zongshu(np.array(b11), y_test)
+    m=max(prf_test,crf_test,crf_test,zongshu)
+    if zongshu>=m:
+        final_pred = zongshu
+        final_result=get_zongshu(np.array(b11))
+    elif prf_test>=m:
+        final_pred=prf_test
+        final_result=get_result(prf.predict_proba(b11))
+    elif crf_test>=m:
+        final_pred=crf_test
+        final_result=get_result(crf.predict_proba(b11))
+    else:
+        final_pred = t_test
+        final_result = CART_Class.predict(b11)
+    return final_pred,final_result
+
+
+def K_fold(X,y,k=5,random_state=123):
+    '''
+    the dataset partitioning of the 5-fold cross validation
+    '''
+    i=0
+    z1,z2=[],[]
+    y1,y2=[],[]
+    a=np.arange(X.shape[0])
+    n=int(X.shape[0]/k)+1
+    random.seed(random_state)
+    random.shuffle(a)
+    while i < k:
+        index1=list(a[i*n:(i+1)*n])
+        index2 = list(a)
+        del index2 [i*n:(i+1)*n]
+        z1.append(X[index1])
+        z2.append(X[index2])
+        y1.append(y[index1])
+        y2.append(y[index2])
+        i+=1
+    return z1,z2,y1,y2
+
+
+def K_fold_training(X,y,k=5,lada=0.015,random_state=123):
+    '''
+    the 5-fold cross validation of HCRC_SMV and HCRC-CGEL for one subject
+    '''
+    c=K_fold(X=X, y=y, k=k, random_state=123)
+    i=0
+    smv,CGEL,zpred,ztest=[],[],[],[]
+    while i<k:
+        X_test,X_train, y_test,  y_train = c[0][i],c[1][i],c[2][i],c[3][i]
+        y_train = y_train.astype(int)
+        y_test = y_test.astype(int)
+        aa = output(X_train, X_test, y_train, y_test, s=5, lada=lada)
+        bb = accu_zongshu(aa, y_test)
+        smv.append(bb)
+        aa_ = output(X_train, X_train, y_train, y_train, s=5, lada=lada)
+        final = cascade_ft(X_train=aa_, X_test=aa, y_train=y_train, y_test=y_test, window=14, stride=2)
+        CGEL.append(final[0])
+        finalpre = final[1].flatten().tolist()[0]
+        finaly_test=y_test.flatten().tolist()
+        zpred.append(finalpre)
+        ztest.append(finaly_test)
+        i+=1
+    mean_smv=np.mean(smv)
+    mean_CGEL = np.mean(CGEL)
+    return mean_smv,mean_CGEL,zpred,ztest
+
+
+#### for example
+### test results  on the first session of SEED IV database
+#### the result is the mean accuracies of the 5-fold cross validation
+X=np.loadtxt('/Users/zhangzhipeng/Desktop/HCR_CGEL/SEED_IV/NCNN/SEED1.txt')
+y=np.loadtxt('/Users/zhangzhipeng/Desktop/HCR_CGEL/SEED_IV/NCNN/SEEDlabel1.txt')
+y=y.astype(int)
+n=y.shape[0]/15
+n=int(n)
+X=X[n:2*n]
+y=y[n:2*n]
+c=K_fold_training(X,y,k=5,lada=0.015,random_state=123)
+mean_smv=c[0]
+mean_CGEL=c[1]
