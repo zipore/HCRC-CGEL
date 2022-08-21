@@ -7,7 +7,7 @@ import math
 from sklearn import tree
 
 
-########
+######## HCRC
 def caifenx(X,j=1, s=4):
     '''
     input: X is preprocessed EEG dataset with four frequency bands
@@ -190,6 +190,9 @@ def get_zongshu(a):
         e.append(ss)
         j += 1
     return np.matrix(e).T
+    
+    
+    
 ##### CGEL####
 #### circular multi-grained scanning
 def cicle_window_slice(X,y,window=10,stride=2):
